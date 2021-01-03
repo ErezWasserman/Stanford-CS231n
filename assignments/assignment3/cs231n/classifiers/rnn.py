@@ -154,13 +154,19 @@ class CaptioningRNN(object):
         # forward pass
         h0 = features.dot(W_proj) + b_proj
         x_word, cache_embed = word_embedding_forward(captions_in, W_embed)
-        h_hidden, cache_hidden = rnn_forward(x_word, h0, Wx, Wh, b)
+        if self.cell_type == "rnn":
+          h_hidden, cache_hidden = rnn_forward(x_word, h0, Wx, Wh, b)
+        elif self.cell_type == "lstm":
+          h_hidden, cache_hidden = lstm_forward(x_word, h0, Wx, Wh, b)
         h_vocab, cache_vocab = temporal_affine_forward(h_hidden, W_vocab, b_vocab)
         loss, dout = temporal_softmax_loss(h_vocab, captions_out, mask, verbose=False)
         
         # backward pass
         dh_hidden, dW_vocab, db_vocab = temporal_affine_backward(dout, cache_vocab)
-        dx_word, dh0, dWx, dWh, db = rnn_backward(dh_hidden, cache_hidden)
+        if self.cell_type == "rnn":
+          dx_word, dh0, dWx, dWh, db = rnn_backward(dh_hidden, cache_hidden)
+        elif self.cell_type == "lstm":
+          dx_word, dh0, dWx, dWh, db = lstm_backward(dh_hidden, cache_hidden)
         dW_embed = word_embedding_backward(dx_word, cache_embed)
         dW_proj = features.T.dot(dh0)   #features[N,D]  dh0[N,H] ->  dW_proj[D,H]
         db_proj = dh0.sum(axis=0)  # dh0[N,H] -> db_proj[H]
@@ -246,10 +252,15 @@ class CaptioningRNN(object):
 
         h = features.dot(W_proj) + b_proj  # initialize hidden state with learned weights
         V, W = W_embed.shape
+        D, H = W_proj.shape
         x = np.ones((N, W)) * W_embed[self._start]  # initialize 'start' token as first word 
+        c = np.zeros((N, H))
 
         for t in range(max_length):
-          h, _ = rnn_step_forward(x, h, Wx, Wh, b)
+          if self.cell_type == "rnn":
+            h, _ = rnn_step_forward(x, h, Wx, Wh, b)
+          elif self.cell_type == "lstm":
+            h, c, _ = lstm_step_forward(x, h, c, Wx, Wh, b)
           scores = h.dot(W_vocab) + b_vocab
           highest_score = scores.argmax(axis=1)
           captions[:,t] = highest_score
